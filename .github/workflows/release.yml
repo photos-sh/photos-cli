@@ -1,0 +1,107 @@
+name: Release
+
+# A tag, never a branch: releasing is a deliberate act.
+on:
+  push:
+    tags:
+      - 'v*'
+
+# One run per tag, and never cancelled: a release cancelled halfway has
+# already uploaded some of its assets.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: build the tag and publish it
+    runs-on: ubuntu-latest
+
+    # Creating a release and attaching assets writes to this repository's
+    # contents, and that is the whole list. The token is set on the publish
+    # step alone, so the build and the tests never run with it in their
+    # environment.
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history: the tag is checked against main below.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      # A tag on a side branch would ship code main never saw.
+      - name: the tag is reachable from main
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Tag $GITHUB_REF_NAME points at $GITHUB_SHA, which is not on main."
+            echo "Releases are built from main: merge first, then tag the merged commit."
+            exit 1
+          fi
+
+      # `dist` depends on `check` in the Makefile: gofmt, vet and the tests
+      # run before a single binary is built. The six platforms and
+      # checksums.txt are the Makefile's business, so a release is built by
+      # something anybody can run on a laptop.
+      - name: test, then build every platform
+        run: make dist VERSION="${GITHUB_REF_NAME#v}"
+
+      # The stamp is checked, not assumed: a `-X main.version` that stops
+      # working leaves every binary calling itself "dev".
+      - name: the binaries report the tag
+        run: |
+          reported="$(./dist/photos-linux-amd64 --version)"
+          if [ "v$reported" != "$GITHUB_REF_NAME" ]; then
+            echo "dist/photos-linux-amd64 reports '$reported', the tag is '$GITHUB_REF_NAME'."
+            exit 1
+          fi
+
+      - name: all six platforms are there, and the checksums match
+        working-directory: dist
+        run: |
+          for asset in photos-linux-amd64 photos-linux-arm64 photos-darwin-amd64 photos-darwin-arm64 photos-windows-amd64.exe photos-windows-arm64.exe; do
+            test -s "$asset" || { echo "missing $asset"; exit 1; }
+            grep -q " $asset\$" checksums.txt || { echo "checksums.txt does not list $asset"; exit 1; }
+          done
+          sha256sum -c checksums.txt
+
+      - name: release notes
+        run: |
+          {
+            printf 'The `photos` command-line client, %s. Linux, macOS and Windows, amd64 and arm64.\n\n' "$GITHUB_REF_NAME"
+            printf 'Install it with the installer, which verifies the download against `checksums.txt`:\n\n'
+            printf '```sh\ncurl -fsSL https://raw.githubusercontent.com/photos-sh/photos-cli/main/installer.sh | bash\n```\n\n'
+            printf 'Or download the file for your platform, make it executable, and put it on your `PATH` as `photos`.\n\n'
+            printf 'See [CHANGELOG.md](https://github.com/photos-sh/photos-cli/blob/%s/CHANGELOG.md) for what changed.\n\n' "$GITHUB_REF_NAME"
+            printf '## Checksums (SHA-256)\n\n```\n'
+            cat dist/checksums.txt
+            printf '```\n'
+          } > "$RUNNER_TEMP/notes.md"
+
+      # `gh` ships on the runner: no third-party action holds the token. A
+      # hyphen in the tag (v1.2.0-rc1) makes it a pre-release, which GitHub
+      # does not serve as "latest", so the installer does not pick it up.
+      # --verify-tag: never create a tag that is not there.
+      - name: publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=()
+          case "$GITHUB_REF_NAME" in
+            *-*) args+=(--prerelease) ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            "${args[@]}" \
+            dist/photos-* \
+            dist/checksums.txt

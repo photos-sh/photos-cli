@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# One run per branch: a superseded run is about a commit nobody is looking
+# at any more.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }}, Go ${{ matrix.go }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: ["1.23", "stable"]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+
+      # Once is enough: formatting does not depend on the platform.
+      - name: gofmt
+        if: matrix.os == 'ubuntu-latest'
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test
+        run: go test -race ./...
+
+      - name: build
+        run: go build -trimpath -o "$RUNNER_TEMP/photos" ./cmd/photos
+
+      # The standard library and photos-go, which itself needs nothing else:
+      # a rule this binary is held to.
+      - name: the only dependency is photos-go
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          others="$(go list -m all | grep -v -e '^github.com/photos-sh/photos-cli$' -e '^github.com/photos-sh/photos-go ' || true)"
+          if [ -n "$others" ]; then
+            echo "go.mod has grown dependencies beyond photos-go:"
+            echo "$others"
+            exit 1
+          fi
+
+  cross:
+    name: every release platform builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: build and vet each platform
+        run: |
+          for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            echo "$platform"
+            GOOS="${platform%/*}" GOARCH="${platform#*/}" CGO_ENABLED=0 go build -o /dev/null ./cmd/photos
+            GOOS="${platform%/*}" GOARCH="${platform#*/}" go vet ./...
+          done
+      - name: the installer is valid shell
+        run: bash -n installer.sh

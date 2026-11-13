@@ -1,0 +1,3 @@
+# Line feeds everywhere, also in a checkout on Windows: gofmt, the shell
+# scripts and the USAGE.md test all expect them.
+* text=auto eol=lf

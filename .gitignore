@@ -1,0 +1,13 @@
+/dist/
+/photos
+/photos.exe
+*.test
+*.out
+.photos-*.tmp
+.idea/
+.vscode/
+.DS_Store
+
+# Local environment
+.env
+.env.*
