@@ -5,6 +5,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the versions follow [semantic versioning](https://semver.org/). The exit
 codes and the shape of `--json` output are part of what a version promises.
 
+## Unreleased
+
+### Changed
+
+- `remove-background` with no subject in the photo: the service now returns
+  the photo as it was, with or without a canvas, instead of an empty canvas.
+  The help, the README and USAGE.md say so; the line still says
+  `no subject found`, and `--json` has `"subject_found": false`.
+
 ## 1.0.0 (unreleased)
 
 First version.

@@ -211,8 +211,9 @@ The cutout can be staged in the same call: on a canvas (--width and
 it, and with something behind it: a colour (--background), an image
 (--background-image) or the photo's own background blurred (--blur); one of
 the three at most. --mask takes none of these, and --crop goes with neither
-a canvas nor --blur. With a canvas and no subject in the photo the result is
-an empty canvas, and its line says "no subject found".
+a canvas nor --blur. When the service finds no subject in a photo (a close-up
+of a box, a plain surface), the result is the photo as it was, with or
+without a canvas, and its line says "no subject found".
 
 ` + fmt.Sprintf(filesLong, "-nobg"),
 		Examples: []string{
