@@ -179,7 +179,8 @@ me.jpg -> me-us-passport.jpg  602x602  image/jpeg  48.3 kB  head: 30.1 mm  findi
 ```
 
 `crop` says whether a subject was found (the crop is centred when not),
-`remove-background` says `no subject found` when a canvas came out empty,
+`remove-background` says `no subject found` when it found nothing to cut out
+(the result is then the photo as it was),
 `restore-faces` how many faces it restored and skipped, `select` the model's
 score, `vectorize` how many paths the SVG has, and `id-photo` the head's
 height and its findings. None of that changes the exit code; see

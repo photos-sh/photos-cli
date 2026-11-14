@@ -171,8 +171,8 @@ type fileResult struct {
 	Passed   *bool     `json:"passed,omitempty"`
 	Findings *[]string `json:"findings,omitempty"`
 	// SubjectFound is whether crop found a subject (or, with --focus face,
-	// a face), and false when remove-background was asked for a canvas and
-	// the photo has no subject. Absent when the API did not say.
+	// a face), and false when remove-background found no subject: the
+	// result is then the photo as it was. Absent when the API did not say.
 	SubjectFound *bool `json:"subject_found,omitempty"`
 	// Paths is how many paths vectorize's SVG has.
 	Paths *int `json:"paths,omitempty"`
