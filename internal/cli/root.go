@@ -82,6 +82,7 @@ error. Exit codes: 0 done, 1 a file or the request failed, 2 wrong usage,
 		loginCommand(),
 		logoutCommand(),
 		versionCommand(),
+		updateCommand(),
 		completionCommand(),
 		helpCommand(root),
 	}

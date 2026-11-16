@@ -52,6 +52,7 @@ Every command and every flag of the `photos` command-line client. The
 - [`photos login`](#photos-login): save your API key on this machine
 - [`photos logout`](#photos-logout): remove the saved API key
 - [`photos version`](#photos-version): print the version of this tool
+- [`photos update`](#photos-update): update this tool to the latest release
 - [`photos completion`](#photos-completion): write a shell completion script
 - [`photos help`](#photos-help): show help for a command
 
@@ -104,6 +105,13 @@ Alias: `bg-remove`.
 The cutout is a transparent PNG unless --format or --background say
 otherwise.
 
+--studio is for studio shots: a product on a plain, light backdrop, as in a
+light tent. It also keeps what clearly stands out from the backdrop and
+touches the product, such as the gift box, case or lid shown with a bottle,
+or a pale box the model left half transparent. Shadows and the floor below
+the product are left out. A photo without a plain light backdrop is cut out
+as without it.
+
 The cutout can be staged in the same call: on a canvas (--width and
 --height, with --fill and --align), with a --shadow or a --reflection under
 it, and with something behind it: a colour (--background), an image
@@ -141,12 +149,14 @@ sent a few at once (--parallel); one failing does not stop the others.
 | `--recursive` | search directories below the ones named, keeping the layout in --out-dir |
 | `--reflection` | add a fading mirror image under the subject; leave room below it (--fill under 1) |
 | `--shadow kind` | a shadow under the subject, by kind: contact (soft, at its base), drop (the silhouette, offset) or none (default: none) |
+| `--studio` | for a product on a plain, light backdrop: also keep what stands out from it and touches the product (a gift box, case or lid); shadows and the floor are left out |
 | `--suffix text` | the text added to each name instead of the command's own; may be empty |
 | `--width pixels` | place the subject on a canvas this wide, in pixels; needs --height |
 
 ```sh
 photos remove-background shoe.jpg
 photos remove-background --background white --crop --padding 40 --format jpg --out-dir cutouts photos/
+photos remove-background --studio perfume.jpg
 photos remove-background --width 2000 --height 2000 --fill 0.8 --shadow contact --background white --format jpg shoe.jpg
 ```
 
@@ -1438,6 +1448,35 @@ The same as `photos --version`. With --json, also the version of the Go library 
 
 ```sh
 photos version
+```
+
+## photos update
+
+Update this tool to the latest release.
+
+```
+photos update [flags]
+```
+
+Downloads the build for this machine from the latest release on GitHub,
+checks it against the release's checksums.txt and replaces the binary that
+is running. Nothing is replaced if the download or the check fails.
+
+When the binary is in a directory you cannot write to (/usr/local/bin, say),
+run it with sudo, or run the installer again.
+
+PHOTOS_RELEASES_URL names a mirror of the releases, as for the installer.
+
+| Flag | |
+|---|---|
+| `--check` | only say whether there is a newer release; change nothing |
+| `--force` | install even when this is the same version, or a development build |
+| `--to release` | install this release (v1.0.0) instead of the latest, older ones included |
+
+```sh
+photos update
+photos update --check
+photos update --to v1.0.0
 ```
 
 ## photos completion

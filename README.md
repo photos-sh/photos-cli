@@ -52,6 +52,20 @@ lists. The binary lands in `/usr/local/bin` where you can write there and in
 Or download the file for your platform from the releases page, make it
 executable and put it on your `PATH` as `photos`.
 
+### Updating
+
+```sh
+photos update           # to the latest release
+photos update --check   # only say whether there is one
+```
+
+It downloads the same build the installer would, checks it against the
+release's `checksums.txt` and replaces the binary that is running; nothing
+is replaced if either fails. `--to v1.0.0` installs a particular release,
+older ones included. Where the binary is in a directory you cannot write to,
+run `sudo photos update`. Version 1.0.0 has no `update`: run the installer
+again once to get past it.
+
 Or build it from a checkout (Go 1.23 or later):
 
 ```sh
@@ -121,6 +135,9 @@ photos run --recipe shop.toml shoe.jpg
 # The cutout staged in the same call: canvas, shadow, background
 photos remove-background --width 2000 --height 2000 --fill 0.8 \
   --shadow contact --background white --format jpg shoe.jpg
+
+# A studio shot: keep the gift box beside the bottle, leave out the shadow
+photos remove-background --studio perfume.jpg     # perfume-nobg.png
 
 # Light and colour, shape, room, a mark
 photos enhance shoe.jpg                           # shoe-enhanced.jpg

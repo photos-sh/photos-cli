@@ -206,6 +206,13 @@ func removeBackgroundCommand() *Command {
 		Long: `The cutout is a transparent PNG unless --format or --background say
 otherwise.
 
+--studio is for studio shots: a product on a plain, light backdrop, as in a
+light tent. It also keeps what clearly stands out from the backdrop and
+touches the product, such as the gift box, case or lid shown with a bottle,
+or a pale box the model left half transparent. Shadows and the floor below
+the product are left out. A photo without a plain light backdrop is cut out
+as without it.
+
 The cutout can be staged in the same call: on a canvas (--width and
 --height, with --fill and --align), with a --shadow or a --reflection under
 it, and with something behind it: a colour (--background), an image
@@ -219,6 +226,7 @@ without a canvas, and its line says "no subject found".
 		Examples: []string{
 			"photos remove-background shoe.jpg",
 			"photos remove-background --background white --crop --padding 40 --format jpg --out-dir cutouts photos/",
+			"photos remove-background --studio perfume.jpg",
 			"photos remove-background --width 2000 --height 2000 --fill 0.8 --shadow contact --background white --format jpg shoe.jpg",
 		},
 		Flags: func(fs *flag.FlagSet) {
@@ -227,6 +235,7 @@ without a canvas, and its line says "no subject found".
 			fs.BoolVar(&o.Crop, "crop", false, "crop to the subject")
 			fs.IntVar(&o.Padding, "padding", 0, "margin around the subject when cropping, in `pixels`")
 			fs.BoolVar(&o.Mask, "mask", false, "write the greyscale alpha mask instead of the cutout")
+			fs.BoolVar(&o.Studio, "studio", false, "for a product on a plain, light backdrop: also keep what stands out from it and touches the product (a gift box, case or lid); shadows and the floor are left out")
 			fs.IntVar(&o.Width, "width", 0, "place the subject on a canvas this wide, in `pixels`; needs --height")
 			fs.IntVar(&o.Height, "height", 0, "the canvas's height in `pixels`; needs --width")
 			fs.Float64Var(&o.Fill, "fill", 0, "how much of the canvas the subject may take in its tighter dimension, as a `fraction` from 0.05 to 1 (default: 0.85)")
@@ -262,7 +271,7 @@ without a canvas, and its line says "no subject found".
 					if err != nil {
 						return nil, nil, err
 					}
-					// The API says so only when a canvas came out empty.
+					// The API says so only when the photo has no subject.
 					return img, func(r *fileResult) { r.SubjectFound = img.SubjectFound }, nil
 				},
 			}, &f, args)

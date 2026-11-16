@@ -57,6 +57,7 @@ func TestEachCommandMakesItsRequest(t *testing.T) {
 		{"bg-remove --format jpg --quality 90 --background white --crop --padding 40 a.png", "POST", "/v1/remove-background",
 			"background=white&crop=true&format=jpg&padding=40&quality=90", []string{"image=a.png"}, nil},
 		{"remove-background --mask a.png", "POST", "/v1/remove-background", "mask=true", []string{"image=a.png"}, nil},
+		{"remove-background --studio a.png", "POST", "/v1/remove-background", "studio=true", []string{"image=a.png"}, nil},
 		// Staging the cutout.
 		{"remove-background --width 80 --height 60 --fill 0.8 --align bottom --shadow contact --reflection --background white a.png", "POST", "/v1/remove-background",
 			"align=bottom&background=white&fill=0.8&height=60&reflection=true&shadow=contact&width=80", []string{"image=a.png"}, nil},

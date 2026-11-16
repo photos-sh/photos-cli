@@ -7,8 +7,21 @@ codes and the shape of `--json` output are part of what a version promises.
 
 ## Unreleased
 
+### Added
+
+- `photos update`: replaces this binary with the latest release, downloaded
+  for this machine and checked against the release's `checksums.txt`, as the
+  installer does. `--check` only says whether there is a newer one, `--to`
+  installs a particular release, and `--force` replaces a development build.
+- `remove-background --studio`, for studio shots: a product on a plain, light
+  backdrop. It also keeps what clearly stands out from the backdrop and
+  touches the product, such as the gift box, case or lid shown with a bottle.
+  Shadows and the floor are left out, and a photo without a plain light
+  backdrop is cut out as without it.
+
 ### Changed
 
+- Built with photos-go 1.1.0 (for `RemoveBackgroundOptions.Studio`).
 - `remove-background` with no subject in the photo: the service now returns
   the photo as it was, with or without a canvas, instead of an empty canvas.
   The help, the README and USAGE.md say so; the line still says
