@@ -135,7 +135,8 @@ func TestUpdateReplacesTheBinary(t *testing.T) {
 	if got := content(t, exe); got != string(rel.binaries["v1.2.0"]) {
 		t.Errorf("the binary is %q", got)
 	}
-	if info, err := os.Stat(exe); err != nil || info.Mode().Perm() != 0o755 {
+	// Windows has no executable bit to check.
+	if info, err := os.Stat(exe); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o755) {
 		t.Errorf("mode: %v %v", info.Mode(), err)
 	}
 	if !strings.Contains(res.stdout, "from 1.1.0 to 1.2.0") {
@@ -157,8 +158,15 @@ func TestUpdateJSON(t *testing.T) {
 	if res.code != 0 {
 		t.Fatalf("exit %d: %s", res.code, res.stderr)
 	}
+	// The path is the file itself, links followed: the temporary directory
+	// is behind one on macOS (/var is /private/var), and Windows may name
+	// it in 8.3 form (RUNNER~1).
+	want, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
 	line := jsonLines(t, res.stdout)[0]
-	if line["current"] != "1.1.0" || line["latest"] != "1.2.0" || line["updated"] != true || line["path"] != exe {
+	if line["current"] != "1.1.0" || line["latest"] != "1.2.0" || line["updated"] != true || line["path"] != want {
 		t.Errorf("json: %v", line)
 	}
 }
@@ -325,8 +333,13 @@ func TestUpdateInADirectoryNotWritable(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 
+	// Named with links followed, as update names it (/private/var on macOS).
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	res := runAs(t, "1.1.0", "update")
-	if res.code != ExitFailed || !strings.Contains(res.stderr, "cannot write to "+dir) || !strings.Contains(res.stderr, "sudo photos update") {
+	if res.code != ExitFailed || !strings.Contains(res.stderr, "cannot write to "+resolved) || !strings.Contains(res.stderr, "sudo photos update") {
 		t.Errorf("exit %d: %s", res.code, res.stderr)
 	}
 	if got := content(t, exe); got != "old binary" {
