@@ -7,6 +7,8 @@ codes and the shape of `--json` output are part of what a version promises.
 
 ## Unreleased
 
+## 1.2.0 (2026-11-16)
+
 ### Added
 
 - `photos run` shows what a recipe's `[barcodes]` and `[text]` steps read off
@@ -20,8 +22,8 @@ codes and the shape of `--json` output are part of what a version promises.
 
 ### Changed
 
-- Built with photos-go 1.2.0 (for `Image.Barcodes`, `Image.Text` and
-  `Client.Preset`).
+- Built with photos-go 1.2.1 (for `Image.Barcodes`, `Image.Text` and
+  `Client.Preset`; its User-Agent now says its own version).
 
 ## 1.1.0 (2026-11-16)
 
