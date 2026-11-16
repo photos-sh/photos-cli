@@ -130,7 +130,8 @@ photos upscale --scale 2 small.jpg                # small-upscaled.jpg
 photos erase --rect 40,60,200,120 room.jpg        # room-erased.jpg
 photos remove-text --matching 'sale|www\.' listing.jpg
 photos run --preset marketplace shoe.jpg          # shoe-marketplace.jpg
-photos run --recipe shop.toml shoe.jpg
+photos presets studio > shop.toml                 # a preset's recipe, to edit
+photos run --recipe shop.toml shoe.jpg            # several steps, one request
 
 # The cutout staged in the same call: canvas, shadow, background
 photos remove-background --width 2000 --height 2000 --fill 0.8 \

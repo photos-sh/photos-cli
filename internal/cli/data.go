@@ -527,18 +527,34 @@ func presetsCommand() *Command {
 		Name:    "presets",
 		Group:   groupAccount,
 		Summary: "list the built-in presets `photos run` takes",
-		Args:    "[flags]",
+		Args:    "[flags] [name]",
+		Long: `With a name, prints that preset's recipe as TOML: a recipe of your own can
+start from it (` + "`photos run --recipe`" + `).`,
 		Examples: []string{
 			"photos presets",
 			"photos presets --json | jq -r '.[].name'",
+			"photos presets studio > mine.toml",
 		},
 		Run: func(ctx context.Context, env *Env, args []string) error {
-			if len(args) > 0 {
-				return usagef("presets takes no arguments")
+			if len(args) > 1 {
+				return usagef("presets takes one preset name at most")
 			}
 			client, err := env.Client()
 			if err != nil {
 				return err
+			}
+			if len(args) == 1 {
+				recipe, err := client.Preset(ctx, args[0])
+				if errors.Is(err, photos.ErrNotFound) {
+					return withHint(err, "`photos presets` lists the presets")
+				}
+				if err != nil {
+					return err
+				}
+				if env.Printer.JSON {
+					return env.Printer.JSONLine(map[string]string{"name": args[0], "recipe": recipe})
+				}
+				return env.Printer.Bytes([]byte(recipe))
 			}
 			presets, err := client.Presets(ctx)
 			if err != nil {

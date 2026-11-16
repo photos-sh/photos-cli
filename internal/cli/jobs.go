@@ -522,6 +522,8 @@ Items that failed, or are not finished, are reported and make the exit code
 						// crop always says; remove-background when a canvas
 						// came out empty; the others never.
 						res.SubjectFound = img.SubjectFound
+						// What a recipe read ("run" jobs).
+						res.read(img)
 					}
 					// What the operation reports beside the image, when the
 					// engine keeps it on job items.

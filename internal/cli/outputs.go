@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	photos "github.com/photos-sh/photos-go"
+
 	"github.com/photos-sh/photos-cli/internal/output"
 )
 
@@ -185,6 +187,23 @@ type fileResult struct {
 	// HeadMm is the head's height in an id photo, in millimetres. Passed and
 	// Findings are id-photo's too: what it could see is wrong.
 	HeadMm *float64 `json:"head_mm,omitempty"`
+	// What a recipe's [barcodes] and [text] steps read off the photo: absent
+	// without the step, empty when it found nothing. TextTruncated says the
+	// API left lines out (it sends at most 8 KB of them).
+	Barcodes      *[]photos.Barcode `json:"barcodes,omitempty"`
+	Text          *[]string         `json:"text,omitempty"`
+	TextTruncated bool              `json:"text_truncated,omitempty"`
+}
+
+// read takes what a recipe read from the image.
+func (r *fileResult) read(img *photos.Image) {
+	if img.Barcodes != nil {
+		r.Barcodes = &img.Barcodes
+	}
+	if img.Text != nil {
+		r.Text = &img.Text
+	}
+	r.TextTruncated = img.TextTruncated
 }
 
 // fileFailure is the --json line of a file that failed.
@@ -235,6 +254,33 @@ func (r *fileResult) line(p *output.Printer, width int) string {
 	}
 	if r.Score != nil {
 		fmt.Fprintf(&b, "  score: %s", round(*r.Score))
+	}
+	if r.Barcodes != nil {
+		if len(*r.Barcodes) == 0 {
+			b.WriteString("  " + p.Paint(output.Yellow, "no barcode found"))
+		} else {
+			codes := make([]string, len(*r.Barcodes))
+			for i, code := range *r.Barcodes {
+				codes[i] = code.Format + " " + code.Value
+			}
+			b.WriteString("  barcodes: " + output.OneLine(strings.Join(codes, ", ")))
+		}
+	}
+	if r.Text != nil {
+		switch n := len(*r.Text); {
+		case n == 0:
+			b.WriteString("  " + p.Paint(output.Yellow, "no text found"))
+		case r.TextTruncated:
+			fmt.Fprintf(&b, "  text: the first %d lines (more were left out)", n)
+		case n == 1:
+			b.WriteString("  text: 1 line")
+		default:
+			fmt.Fprintf(&b, "  text: %d lines", n)
+		}
+		// The lines themselves, under the file's line.
+		for _, line := range *r.Text {
+			b.WriteString("\n    " + output.OneLine(line))
+		}
 	}
 	switch {
 	case r.HeadMm != nil:
