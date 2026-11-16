@@ -851,7 +851,14 @@ photos run [flags] (--preset <name> | --recipe <file.toml>) <image|directory|->.
 ```
 
 A preset is a built-in chain of steps (`photos presets` lists them); a
-recipe is the same thing written by you, as TOML.
+recipe is the same thing written by you, as TOML. Either is one request a
+photo, charged as one, however many steps it has. `photos presets <name>`
+prints a preset's recipe to start from; the steps and their options are in
+the API reference under POST /v1/run.
+
+A recipe's [barcodes] and [text] steps read the photo before any step
+changes it. What they read is on the file's line (the codes, and the lines
+of text under it) and, with --json, in "barcodes" and "text".
 
 Inputs are files, directories (searched for images; --recursive goes below
 them) and - for standard input. Each result is written beside its source as
@@ -1315,12 +1322,16 @@ photos webhook secret --json | jq -r '.scheme'
 List the built-in presets `photos run` takes.
 
 ```
-photos presets [flags]
+photos presets [flags] [name]
 ```
+
+With a name, prints that preset's recipe as TOML: a recipe of your own can
+start from it (`photos run --recipe`).
 
 ```sh
 photos presets
 photos presets --json | jq -r '.[].name'
+photos presets studio > mine.toml
 ```
 
 ## photos marketplaces

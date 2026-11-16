@@ -504,7 +504,14 @@ func runCommand() *Command {
 		Summary: "apply a preset or a recipe of your own",
 		Args:    "[flags] (--preset <name> | --recipe <file.toml>) <image|directory|->...",
 		Long: `A preset is a built-in chain of steps (` + "`photos presets`" + ` lists them); a
-recipe is the same thing written by you, as TOML.
+recipe is the same thing written by you, as TOML. Either is one request a
+photo, charged as one, however many steps it has. ` + "`photos presets <name>`" + `
+prints a preset's recipe to start from; the steps and their options are in
+the API reference under POST /v1/run.
+
+A recipe's [barcodes] and [text] steps read the photo before any step
+changes it. What they read is on the file's line (the codes, and the lines
+of text under it) and, with --json, in "barcodes" and "text".
 
 ` + fmt.Sprintf(filesLong, "-<preset>"),
 		Examples: []string{
@@ -538,7 +545,10 @@ recipe is the same thing written by you, as TOML.
 				ext:    unknownExt,
 				call: func(ctx context.Context, c *photos.Client, in photos.Input) (*photos.Image, func(*fileResult), error) {
 					img, err := c.Run(ctx, in, &o)
-					return img, nil, err
+					if err != nil {
+						return nil, nil, err
+					}
+					return img, func(r *fileResult) { r.read(img) }, nil
 				},
 			}, &f, args)
 		},

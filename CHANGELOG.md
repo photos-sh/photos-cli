@@ -9,6 +9,24 @@ codes and the shape of `--json` output are part of what a version promises.
 
 ### Added
 
+- `photos run` shows what a recipe's `[barcodes]` and `[text]` steps read off
+  the photo: the codes on the file's line and the lines of text under it, and
+  with `--json` the `barcodes` and `text` fields (left out without the step,
+  `[]` when it found nothing; `text_truncated` when the service left lines
+  out). `photos jobs download` shows them for `run` jobs too. Reading needs
+  the engine release that added it; an older one refuses those steps.
+- `photos presets <name>` prints that preset's recipe as TOML, to start a
+  recipe of your own from (`--json`: `{"name", "recipe"}`).
+
+### Changed
+
+- Built with photos-go 1.2.0 (for `Image.Barcodes`, `Image.Text` and
+  `Client.Preset`).
+
+## 1.1.0 (2026-11-16)
+
+### Added
+
 - `photos update`: replaces this binary with the latest release, downloaded
   for this machine and checked against the release's `checksums.txt`, as the
   installer does. `--check` only says whether there is a newer one, `--to`
@@ -27,7 +45,7 @@ codes and the shape of `--json` output are part of what a version promises.
   The help, the README and USAGE.md say so; the line still says
   `no subject found`, and `--json` has `"subject_found": false`.
 
-## 1.0.0 (unreleased)
+## 1.0.0 (2026-11-13)
 
 First version.
 

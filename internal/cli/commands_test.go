@@ -170,7 +170,7 @@ func TestUsageErrors(t *testing.T) {
 		{"jobs wait a b", "one job id"},
 		{"jobs delete", "id"},
 		{"jobs download", "one job id"},
-		{"presets extra", "no arguments"},
+		{"presets one two", "one preset name at most"},
 		{"completion", "bash, zsh or fish"},
 		{"completion powershell", "bash, zsh or fish"},
 		{"webhook verify", "--secret-env"},
