@@ -43,6 +43,19 @@ the results.`,
 	}
 }
 
+const (
+	// defaultJobWait is how long a job is waited for unless --wait-timeout
+	// says otherwise: longer than the library's 10 minutes, which a job of a
+	// few hundred photos queued behind others outlasts.
+	defaultJobWait = time.Hour
+	// defaultMaxUploadMB is the most one job may upload, as the service
+	// takes it; more is sent as several jobs.
+	defaultMaxUploadMB = 100
+	// maxJobItems is the most images one job may hold, as the service takes
+	// them.
+	maxJobItems = 1000
+)
+
 // waitFlags say how a job is waited for.
 type waitFlags struct {
 	interval time.Duration
@@ -51,7 +64,7 @@ type waitFlags struct {
 
 func (w *waitFlags) register(fs *flag.FlagSet) {
 	fs.DurationVar(&w.interval, "interval", photos.DefaultWaitInterval, "the `time` between two looks at the job")
-	fs.DurationVar(&w.timeout, "wait-timeout", photos.DefaultWaitTimeout, "the longest `time` to wait for the job")
+	fs.DurationVar(&w.timeout, "wait-timeout", defaultJobWait, "the longest `time` to wait, for all the jobs named")
 }
 
 func (w *waitFlags) check() error {
@@ -64,13 +77,14 @@ func (w *waitFlags) check() error {
 // errStillRunning is a job that did not complete within --wait-timeout.
 var errStillRunning = errors.New("the job is still running")
 
-// waitJob polls a job until every item was attempted, saying on standard
-// error how far it is whenever that changes.
+// waitJob polls a job until every item was attempted or deadline passes,
+// saying on standard error how far it is whenever that changes. A job still
+// running at the deadline is returned with an error that wraps
+// errStillRunning.
 //
 // The library's Jobs.Wait does the same but cannot report progress, so the
 // loop is here, on the library's Jobs.Get.
-func waitJob(ctx context.Context, env *Env, client *photos.Client, id string, w *waitFlags) (*photos.Job, error) {
-	deadline := time.Now().Add(w.timeout)
+func waitJob(ctx context.Context, env *Env, client *photos.Client, id string, w *waitFlags, deadline time.Time) (*photos.Job, error) {
 	last := ""
 	for {
 		job, err := client.Jobs.Get(ctx, id)
@@ -196,6 +210,7 @@ func jobsCreateCommand() *Command {
 		webhook   string
 		wait      bool
 		recursive bool
+		maxMB     int
 		w         waitFlags
 	)
 	return &Command{
@@ -215,21 +230,27 @@ as true (--param zoom=true).
 An item is one image, so a watermark job takes text only (no logo) and a
 remove-background job no background image.
 
-Prints the job's id, alone on standard output so that a script can keep it.
-With --wait it waits for the job and prints it, and the exit code is 1 if an
-item failed.`,
+One job uploads at most --max-upload-mb (100 MB, the most the service takes)
+and 1000 images. More is sent as several jobs, one after another, each
+holding whole images in the order given.
+
+Prints each job's id on its own line of standard output, as it starts, so
+that a script can keep them. With --wait it waits for the jobs and prints
+them, and the exit code is 1 if an item failed.`,
 		Examples: []string{
 			"photos jobs create resize --param width=1600 --param format=webp photos/",
 			"photos jobs create run --param preset=marketplace --webhook-url https://example.com/hooks/photos https://example.com/1.jpg https://example.com/2.jpg",
 			"photos jobs create remove-background --wait --json photos/ | jq '.counts'",
 			"photos jobs create select --param point=420,310 --param point=440,300 --param crop=true photos/",
+			"photos jobs download --out-dir results $(photos jobs create run --recipe lot.toml photos/)",
 		},
 		Flags: func(fs *flag.FlagSet) {
 			fs.Var(&params, "param", "a parameter of the operation, as `name=value`; repeatable")
 			fs.StringVar(&recipe, "recipe", "", "a recipe `file` (TOML), for the operation run")
 			fs.StringVar(&webhook, "webhook-url", "", "a `url` to send a signed job.completed event to when the job is done")
-			fs.BoolVar(&wait, "wait", false, "wait for the job to complete, then print it")
+			fs.BoolVar(&wait, "wait", false, "wait for the jobs to complete, then print them")
 			fs.BoolVar(&recursive, "recursive", false, "search directories below the ones named")
+			fs.IntVar(&maxMB, "max-upload-mb", defaultMaxUploadMB, "the most one job uploads, in `MB`; more is sent as several jobs")
 			w.register(fs)
 		},
 		Run: func(ctx context.Context, env *Env, args []string) error {
@@ -241,6 +262,9 @@ item failed.`,
 			}
 			if err := w.check(); err != nil {
 				return err
+			}
+			if maxMB < 1 {
+				return usagef("--max-upload-mb must be at least 1")
 			}
 			req := &photos.JobRequest{Operation: args[0], WebhookURL: webhook}
 			var err error
@@ -258,44 +282,157 @@ item failed.`,
 			if err != nil {
 				return err
 			}
-			req.URLs = urls
 			for _, s := range sources {
 				if s.err != nil {
 					return fmt.Errorf("%s: %w", s.display, s.err)
 				}
-				req.Images = append(req.Images, s.input())
 			}
-			if len(req.URLs)+len(req.Images) == 0 {
+			if len(urls)+len(sources) == 0 {
 				return errors.New("no images to send")
+			}
+			parts, err := splitJob(sources, urls, int64(maxMB)<<20-jobFormReserve(req))
+			if err != nil {
+				return err
 			}
 
 			client, err := env.Client()
 			if err != nil {
 				return err
 			}
-			job, err := client.Jobs.Create(ctx, req)
-			if err != nil {
-				return err
-			}
 			p := env.Printer
-			if !wait {
-				if p.JSON {
-					return p.Raw(job.Raw)
+			if len(parts) > 1 {
+				var total int64
+				for _, part := range parts {
+					total += part.bytes
 				}
-				p.Data("%s", output.OneLine(job.ID))
-				p.Note("Started a %s job with %d items. Follow it with: photos jobs wait %s", job.Operation, job.Counts.Total, job.ID)
+				p.Note("%d images, %s: more than one job uploads (%d MB, %d images), so sent as %d jobs",
+					len(sources)+len(urls), output.Size(total), maxMB, maxJobItems, len(parts))
+			}
+			jobs := make([]*photos.Job, 0, len(parts))
+			for _, part := range parts {
+				one := *req
+				one.Images, one.URLs = part.images, part.urls
+				job, err := client.Jobs.Create(ctx, &one)
+				if err != nil {
+					if len(jobs) > 0 {
+						p.Warn("%d of %d jobs started before this one failed; their ids are above", len(jobs), len(parts))
+					}
+					return err
+				}
+				jobs = append(jobs, job)
+				if wait {
+					continue
+				}
+				if p.JSON {
+					if err := p.Raw(job.Raw); err != nil {
+						return err
+					}
+				} else {
+					p.Data("%s", output.OneLine(job.ID))
+				}
+			}
+			ids := make([]string, len(jobs))
+			items := 0
+			for i, job := range jobs {
+				ids[i] = output.OneLine(job.ID)
+				items += job.Counts.Total
+			}
+			if !wait {
+				if len(jobs) == 1 {
+					p.Note("Started a %s job with %d items. Follow it with: photos jobs wait %s", jobs[0].Operation, items, ids[0])
+				} else {
+					p.Note("Started %d %s jobs with %d items in all. Follow them with: photos jobs wait %s", len(jobs), jobs[0].Operation, items, strings.Join(ids, " "))
+				}
 				return nil
 			}
-			job, err = waitJob(ctx, env, client, job.ID, &w)
-			if err != nil {
+			return waitAndPrint(ctx, env, client, ids, &w)
+		},
+	}
+}
+
+// waitAndPrint waits for each job in turn, within one --wait-timeout for
+// them all, and prints each as it completes. The exit code is 1 if an item
+// failed or a job is still running.
+func waitAndPrint(ctx context.Context, env *Env, client *photos.Client, ids []string, w *waitFlags) error {
+	deadline := time.Now().Add(w.timeout)
+	var worst error
+	for _, id := range ids {
+		job, err := waitJob(ctx, env, client, id, w, deadline)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || len(ids) == 1 {
 				return err
 			}
+			env.Printer.Error("%s: %s", output.OneLine(id), describe(err))
+			worst = worse(worst, &exitError{code: ExitCode(err)})
+			continue
+		}
+		if !env.Printer.Quiet || env.Printer.JSON {
 			if err := printJob(env, job); err != nil {
 				return err
 			}
-			return jobFailures(env, job)
-		},
+		}
+		worst = worse(worst, jobFailures(env, job))
 	}
+	return worst
+}
+
+// jobPart is what one job of a split create uploads and fetches.
+type jobPart struct {
+	images []photos.Input
+	urls   []string
+	// bytes is the size of the images.
+	bytes int64
+}
+
+// partOverhead is about what one image adds to a multipart body beyond its
+// own bytes: the boundary and the part's headers.
+const partOverhead = 512
+
+// jobFormReserve is what a job's form takes besides its images: the
+// operation, parameters, recipe and webhook, with room to spare.
+func jobFormReserve(req *photos.JobRequest) int64 {
+	return 64<<10 + int64(len(req.Recipe)+len(req.WebhookURL))
+}
+
+// splitJob divides the inputs, in their order, into jobs that each upload at
+// most budget bytes and hold at most maxJobItems images. URLs cost the
+// upload nothing and fill the last job, then more.
+func splitJob(sources []source, urls []string, budget int64) ([]jobPart, error) {
+	var parts []jobPart
+	fits := func(size int64) bool {
+		if len(parts) == 0 {
+			return false
+		}
+		last := &parts[len(parts)-1]
+		return len(last.images)+len(last.urls) < maxJobItems && last.bytes+int64(len(last.images)+1)*partOverhead+size <= budget
+	}
+	for _, s := range sources {
+		size := int64(len(s.data))
+		if !s.stdin {
+			info, err := os.Stat(s.path)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", s.display, pathError(err))
+			}
+			size = info.Size()
+		}
+		if size+partOverhead > budget {
+			return nil, fmt.Errorf("%s is %s, more than one job may upload; send it with photos run, or raise --max-upload-mb", s.display, output.Size(size))
+		}
+		if !fits(size) {
+			parts = append(parts, jobPart{})
+		}
+		last := &parts[len(parts)-1]
+		last.images = append(last.images, s.input())
+		last.bytes += size
+	}
+	for _, u := range urls {
+		if !fits(0) {
+			parts = append(parts, jobPart{})
+		}
+		last := &parts[len(parts)-1]
+		last.urls = append(last.urls, u)
+	}
+	return parts, nil
 }
 
 func jobsListCommand() *Command {
@@ -340,6 +477,27 @@ func jobsListCommand() *Command {
 	}
 }
 
+// jobIDs are the job ids of a command that takes several.
+func jobIDs(args []string) ([]string, error) {
+	if len(args) == 0 {
+		return nil, usagef("give one or more job ids, as `photos jobs list` shows them")
+	}
+	for _, id := range args {
+		if id == "" {
+			return nil, usagef("a job id cannot be empty")
+		}
+	}
+	return args, nil
+}
+
+// worse is the more severe of two failures, by exit code.
+func worse(a, b error) error {
+	if a == nil || (b != nil && ExitCode(b) > ExitCode(a)) {
+		return b
+	}
+	return a
+}
+
 // oneJobID is the single job id of a command that takes one.
 func oneJobID(args []string) (string, error) {
 	if len(args) != 1 || args[0] == "" {
@@ -379,18 +537,19 @@ func jobsWaitCommand() *Command {
 	var w waitFlags
 	return &Command{
 		Name:    "wait",
-		Summary: "wait for a job to complete, then show it",
-		Args:    "[flags] <id>",
-		Long: `Progress goes to standard error. The exit code is 0 when every item is
-done, and 1 when an item failed or the job is still running after
---wait-timeout.`,
+		Summary: "wait for jobs to complete, then show them",
+		Args:    "[flags] <id>...",
+		Long: `Several jobs are waited for one after another, within one --wait-timeout,
+and each is shown as it completes. Progress goes to standard error. The exit
+code is 0 when every item is done, and 1 when an item failed or a job is
+still running after --wait-timeout (an hour unless set).`,
 		Examples: []string{
 			"photos jobs wait job_5f0c2a",
-			"photos jobs wait job_5f0c2a --wait-timeout 30m --quiet && photos jobs download job_5f0c2a",
+			"photos jobs wait job_5f0c2a job_7d1e9b --wait-timeout 3h --quiet && photos jobs download job_5f0c2a job_7d1e9b",
 		},
 		Flags: w.register,
 		Run: func(ctx context.Context, env *Env, args []string) error {
-			id, err := oneJobID(args)
+			ids, err := jobIDs(args)
 			if err != nil {
 				return err
 			}
@@ -401,16 +560,7 @@ done, and 1 when an item failed or the job is still running after
 			if err != nil {
 				return err
 			}
-			job, err := waitJob(ctx, env, client, id, &w)
-			if err != nil {
-				return err
-			}
-			if !env.Printer.Quiet || env.Printer.JSON {
-				if err := printJob(env, job); err != nil {
-					return err
-				}
-			}
-			return jobFailures(env, job)
+			return waitAndPrint(ctx, env, client, ids, &w)
 		},
 	}
 }
@@ -443,11 +593,13 @@ func jobsDownloadCommand() *Command {
 		outDir   string
 		force    bool
 		parallel int
+		noWait   bool
+		w        waitFlags
 	)
 	return &Command{
 		Name:    "download",
-		Summary: "save the result of every finished item of a job",
-		Args:    "[flags] <id>",
+		Summary: "wait for jobs, then save the result of every item",
+		Args:    "[flags] <id>...",
 		Long: `Each result is named after its input: shoe.jpg gives shoe.png for an image
 result, shoe.svg for a vectorize job, shoe.json for a data result (ocr,
 barcodes, check, label, palette, faces, caption). Two inputs with one name
@@ -455,19 +607,27 @@ give shoe.png and shoe-2.png. A file that exists is not replaced unless
 --force is given. Each line says what the matching command would: the faces
 hidden or restored, whether a subject was found, an id photo's findings.
 
+Each job is waited for first, as photos jobs wait does, and its results are
+saved as soon as it completes; several jobs go into one directory, named as
+one. With --no-wait, or once --wait-timeout (an hour) has passed, only the
+items finished by then are saved.
+
 Items that failed, or are not finished, are reported and make the exit code
 1; the others are still saved.`,
 		Examples: []string{
 			"photos jobs download job_5f0c2a --out-dir results",
+			"photos jobs download job_5f0c2a job_7d1e9b --out-dir results --wait-timeout 3h",
 			"photos jobs download job_5f0c2a --json | jq -r 'select(.error) | .input'",
 		},
 		Flags: func(fs *flag.FlagSet) {
 			fs.StringVar(&outDir, "out-dir", ".", "the `directory` to save into, created if missing")
 			fs.BoolVar(&force, "force", false, "replace files that exist")
 			fs.IntVar(&parallel, "parallel", 4, "how many `files` to fetch at once")
+			fs.BoolVar(&noWait, "no-wait", false, "save the items finished now, without waiting for the rest")
+			w.register(fs)
 		},
 		Run: func(ctx context.Context, env *Env, args []string) error {
-			id, err := oneJobID(args)
+			ids, err := jobIDs(args)
 			if err != nil {
 				return err
 			}
@@ -477,95 +637,126 @@ Items that failed, or are not finished, are reported and make the exit code
 			if outDir == "" {
 				return usagef("--out-dir cannot be empty")
 			}
+			if err := w.check(); err != nil {
+				return err
+			}
 			client, err := env.Client()
 			if err != nil {
 				return err
 			}
-			job, err := client.Jobs.Get(ctx, id)
-			if err != nil {
-				return err
-			}
-			if len(job.Items) == 0 {
-				return errors.New("the job has no items")
-			}
-			if !job.Completed() {
-				env.Printer.Warn("%s is %s: only the finished items are saved", job.ID, job.Status)
-			}
 			if err := os.MkdirAll(outDir, 0o755); err != nil {
 				return pathError(err)
 			}
-
+			deadline := time.Now().Add(w.timeout)
 			var names namer
-			tasks := make([]task, 0, len(job.Items))
-			for n, item := range job.Items {
-				stem := names.claim(outDir, itemStem(item.Input, n))
-				tasks = append(tasks, task{display: item.Input, item: &n, do: func(ctx context.Context) (*fileResult, error) {
-					switch {
-					case item.Error != nil:
-						return nil, item.Error
-					case item.Status != photos.ItemDone:
-						return nil, fmt.Errorf("not finished (%s)", item.Status)
+			var worst error
+			for _, id := range ids {
+				var job *photos.Job
+				if noWait {
+					job, err = client.Jobs.Get(ctx, id)
+				} else {
+					job, err = waitJob(ctx, env, client, id, &w, deadline)
+					if errors.Is(err, errStillRunning) {
+						// Save what is finished; the rest is reported.
+						err = nil
 					}
-					if ext := extensionFor(item.ContentType, ""); !force && ext != "" && exists(filepath.Join(outDir, stem+ext)) {
-						return nil, fmt.Errorf("%s %w", filepath.Join(outDir, stem+ext), errExists)
+				}
+				if err == nil && len(job.Items) == 0 {
+					err = errors.New("the job has no items")
+				}
+				if err != nil {
+					if errors.Is(err, context.Canceled) || len(ids) == 1 {
+						return err
 					}
-					got, err := client.Jobs.Item(ctx, job.ID, n)
-					if err != nil {
-						return nil, err
-					}
-					res := &fileResult{
-						Item: &n, Input: item.Input, ContentType: got.ContentType, Bytes: len(got.Body),
-						Output: filepath.Join(outDir, stem+extensionFor(got.ContentType, ".bin")),
-					}
-					if img := got.Image(); img != nil {
-						res.Width, res.Height, res.Quality = img.Width, img.Height, img.Quality
-						// crop always says; remove-background when a canvas
-						// came out empty; the others never.
-						res.SubjectFound = img.SubjectFound
-						// What a recipe read ("run" jobs).
-						res.read(img)
-					}
-					// What the operation reports beside the image, when the
-					// engine keeps it on job items.
-					switch job.Operation {
-					case photos.OperationFix:
-						if fix, err := got.Fix(); err == nil {
-							res.Passed, res.Findings = &fix.Passed, &fix.Findings
-						}
-					case photos.OperationRemoveText:
-						if rt, err := got.RemoveText(); err == nil {
-							res.Removed, res.Kept = &rt.Removed, &rt.Kept
-						}
-					case photos.OperationVectorize:
-						if v, err := got.Vectorize(); err == nil {
-							res.Paths = &v.Paths
-						}
-					case photos.OperationBlurFaces:
-						if bf, err := got.BlurFaces(); err == nil {
-							res.Faces = &bf.Faces
-						}
-					case photos.OperationRestoreFaces:
-						if rf, err := got.RestoreFaces(); err == nil {
-							res.Faces, res.FacesSkipped = &rf.Faces, &rf.FacesSkipped
-						}
-					case photos.OperationSelect:
-						if sel, err := got.Select(); err == nil {
-							res.Score = &sel.Score
-						}
-					case photos.OperationIDPhoto:
-						if id, err := got.IDPhoto(); err == nil {
-							res.Passed, res.Findings, res.HeadMm = &id.Passed, &id.Findings, &id.HeadMm
-						}
-					}
-					if err := writeAtomic(res.Output, got.Body, force); err != nil {
-						return nil, fmt.Errorf("%s %w", res.Output, err)
-					}
-					return res, nil
-				}})
+					env.Printer.Error("%s: %s", output.OneLine(id), describe(err))
+					worst = worse(worst, &exitError{code: ExitCode(err)})
+					continue
+				}
+				if !job.Completed() {
+					env.Printer.Warn("%s is %s: only the finished items are saved", job.ID, job.Status)
+				}
+				err = runTasks(ctx, env, downloadTasks(client, job, outDir, &names, force), parallel, "items")
+				if errors.Is(err, context.Canceled) {
+					return err
+				}
+				worst = worse(worst, err)
 			}
-			return runTasks(ctx, env, tasks, parallel, "items")
+			return worst
 		},
 	}
+}
+
+// downloadTasks fetch and save each item of a job, named after its input,
+// claiming the names from names.
+func downloadTasks(client *photos.Client, job *photos.Job, outDir string, names *namer, force bool) []task {
+	tasks := make([]task, 0, len(job.Items))
+	for n, item := range job.Items {
+		stem := names.claim(outDir, itemStem(item.Input, n))
+		tasks = append(tasks, task{display: item.Input, item: &n, do: func(ctx context.Context) (*fileResult, error) {
+			switch {
+			case item.Error != nil:
+				return nil, item.Error
+			case item.Status != photos.ItemDone:
+				return nil, fmt.Errorf("not finished (%s)", item.Status)
+			}
+			if ext := extensionFor(item.ContentType, ""); !force && ext != "" && exists(filepath.Join(outDir, stem+ext)) {
+				return nil, fmt.Errorf("%s %w", filepath.Join(outDir, stem+ext), errExists)
+			}
+			got, err := client.Jobs.Item(ctx, job.ID, n)
+			if err != nil {
+				return nil, err
+			}
+			res := &fileResult{
+				Item: &n, Input: item.Input, ContentType: got.ContentType, Bytes: len(got.Body),
+				Output: filepath.Join(outDir, stem+extensionFor(got.ContentType, ".bin")),
+			}
+			if img := got.Image(); img != nil {
+				res.Width, res.Height, res.Quality = img.Width, img.Height, img.Quality
+				// crop always says; remove-background when a canvas
+				// came out empty; the others never.
+				res.SubjectFound = img.SubjectFound
+				// What a recipe read ("run" jobs).
+				res.read(img)
+			}
+			// What the operation reports beside the image, when the
+			// engine keeps it on job items.
+			switch job.Operation {
+			case photos.OperationFix:
+				if fix, err := got.Fix(); err == nil {
+					res.Passed, res.Findings = &fix.Passed, &fix.Findings
+				}
+			case photos.OperationRemoveText:
+				if rt, err := got.RemoveText(); err == nil {
+					res.Removed, res.Kept = &rt.Removed, &rt.Kept
+				}
+			case photos.OperationVectorize:
+				if v, err := got.Vectorize(); err == nil {
+					res.Paths = &v.Paths
+				}
+			case photos.OperationBlurFaces:
+				if bf, err := got.BlurFaces(); err == nil {
+					res.Faces = &bf.Faces
+				}
+			case photos.OperationRestoreFaces:
+				if rf, err := got.RestoreFaces(); err == nil {
+					res.Faces, res.FacesSkipped = &rf.Faces, &rf.FacesSkipped
+				}
+			case photos.OperationSelect:
+				if sel, err := got.Select(); err == nil {
+					res.Score = &sel.Score
+				}
+			case photos.OperationIDPhoto:
+				if id, err := got.IDPhoto(); err == nil {
+					res.Passed, res.Findings, res.HeadMm = &id.Passed, &id.Findings, &id.HeadMm
+				}
+			}
+			if err := writeAtomic(res.Output, got.Body, force); err != nil {
+				return nil, fmt.Errorf("%s %w", res.Output, err)
+			}
+			return res, nil
+		}})
+	}
+	return tasks
 }
 
 func jobsDeleteCommand() *Command {

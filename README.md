@@ -311,15 +311,23 @@ terminal, and takes URLs as well as files.
 $ id=$(photos jobs create remove-background --param format=png photos/)
 Started a remove-background job with 240 items. Follow it with: photos jobs wait job_5f0c2a
 
-$ photos jobs wait "$id" && photos jobs download "$id" --out-dir cutouts
+$ photos jobs download "$id" --out-dir cutouts
 job_5f0c2a: running, 96 of 240 done
 job_5f0c2a: completed, 240 of 240 done
-...
 boot.jpg -> cutouts/boot.png  1600x1067  image/png  701.3 kB
 shoe.jpg -> cutouts/shoe.png  1600x1200  image/png  812.4 kB
 ```
 
-`photos jobs create … --wait` does the first two steps in one. `jobs list`,
+`jobs download` waits for the job first (up to an hour; `--wait-timeout`,
+or `--no-wait` for what is finished now). One job uploads at most 100 MB and
+1000 images; `jobs create` sends more as several jobs and prints each id on
+its own line, and `jobs wait` and `jobs download` take them all:
+
+```sh
+photos jobs download --out-dir results $(photos jobs create run --recipe lot.toml photos/)
+```
+
+`photos jobs create … --wait` waits and shows the jobs in one step. `jobs list`,
 `jobs get <id>` and `jobs delete <id>` do what they say. Every tool is an
 operation: its parameters are given with `--param`, named as the command's
 flags, and one that repeats is given more than once:

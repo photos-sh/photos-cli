@@ -38,8 +38,8 @@ Every command and every flag of the `photos` command-line client. The
   - [`photos jobs create`](#photos-jobs-create): start a job
   - [`photos jobs list`](#photos-jobs-list): list your recent jobs, newest first
   - [`photos jobs get`](#photos-jobs-get): show a job: its status, progress and items
-  - [`photos jobs wait`](#photos-jobs-wait): wait for a job to complete, then show it
-  - [`photos jobs download`](#photos-jobs-download): save the result of every finished item of a job
+  - [`photos jobs wait`](#photos-jobs-wait): wait for jobs to complete, then show them
+  - [`photos jobs download`](#photos-jobs-download): wait for jobs, then save the result of every item
   - [`photos jobs delete`](#photos-jobs-delete): cancel a job if it is unfinished, and delete it and its results
 - [`photos webhook`](#photos-webhook): verify a job's webhook delivery, and show the signing key
   - [`photos webhook verify`](#photos-webhook-verify): check a webhook delivery's signature
@@ -1116,8 +1116,8 @@ the results.
 | [`photos jobs create`](#photos-jobs-create) | start a job |
 | [`photos jobs list`](#photos-jobs-list) | list your recent jobs, newest first |
 | [`photos jobs get`](#photos-jobs-get) | show a job: its status, progress and items |
-| [`photos jobs wait`](#photos-jobs-wait) | wait for a job to complete, then show it |
-| [`photos jobs download`](#photos-jobs-download) | save the result of every finished item of a job |
+| [`photos jobs wait`](#photos-jobs-wait) | wait for jobs to complete, then show them |
+| [`photos jobs download`](#photos-jobs-download) | wait for jobs, then save the result of every item |
 | [`photos jobs delete`](#photos-jobs-delete) | cancel a job if it is unfinished, and delete it and its results |
 
 ```sh
@@ -1146,18 +1146,23 @@ as true (--param zoom=true).
 An item is one image, so a watermark job takes text only (no logo) and a
 remove-background job no background image.
 
-Prints the job's id, alone on standard output so that a script can keep it.
-With --wait it waits for the job and prints it, and the exit code is 1 if an
-item failed.
+One job uploads at most --max-upload-mb (100 MB, the most the service takes)
+and 1000 images. More is sent as several jobs, one after another, each
+holding whole images in the order given.
+
+Prints each job's id on its own line of standard output, as it starts, so
+that a script can keep them. With --wait it waits for the jobs and prints
+them, and the exit code is 1 if an item failed.
 
 | Flag | |
 |---|---|
 | `--interval time` | the time between two looks at the job (default 2s) |
+| `--max-upload-mb MB` | the most one job uploads, in MB; more is sent as several jobs (default 100) |
 | `--param name=value` | a parameter of the operation, as name=value; repeatable |
 | `--recipe file` | a recipe file (TOML), for the operation run |
 | `--recursive` | search directories below the ones named |
-| `--wait` | wait for the job to complete, then print it |
-| `--wait-timeout time` | the longest time to wait for the job (default 10m0s) |
+| `--wait` | wait for the jobs to complete, then print them |
+| `--wait-timeout time` | the longest time to wait, for all the jobs named (default 1h0m0s) |
 | `--webhook-url url` | a url to send a signed job.completed event to when the job is done |
 
 ```sh
@@ -1165,6 +1170,7 @@ photos jobs create resize --param width=1600 --param format=webp photos/
 photos jobs create run --param preset=marketplace --webhook-url https://example.com/hooks/photos https://example.com/1.jpg https://example.com/2.jpg
 photos jobs create remove-background --wait --json photos/ | jq '.counts'
 photos jobs create select --param point=420,310 --param point=440,300 --param crop=true photos/
+photos jobs download --out-dir results $(photos jobs create run --recipe lot.toml photos/)
 ```
 
 ## photos jobs list
@@ -1195,32 +1201,33 @@ photos jobs get job_5f0c2a --json | jq -r '.items[] | select(.status == "failed"
 
 ## photos jobs wait
 
-Wait for a job to complete, then show it.
+Wait for jobs to complete, then show them.
 
 ```
-photos jobs wait [flags] <id>
+photos jobs wait [flags] <id>...
 ```
 
-Progress goes to standard error. The exit code is 0 when every item is
-done, and 1 when an item failed or the job is still running after
---wait-timeout.
+Several jobs are waited for one after another, within one --wait-timeout,
+and each is shown as it completes. Progress goes to standard error. The exit
+code is 0 when every item is done, and 1 when an item failed or a job is
+still running after --wait-timeout (an hour unless set).
 
 | Flag | |
 |---|---|
 | `--interval time` | the time between two looks at the job (default 2s) |
-| `--wait-timeout time` | the longest time to wait for the job (default 10m0s) |
+| `--wait-timeout time` | the longest time to wait, for all the jobs named (default 1h0m0s) |
 
 ```sh
 photos jobs wait job_5f0c2a
-photos jobs wait job_5f0c2a --wait-timeout 30m --quiet && photos jobs download job_5f0c2a
+photos jobs wait job_5f0c2a job_7d1e9b --wait-timeout 3h --quiet && photos jobs download job_5f0c2a job_7d1e9b
 ```
 
 ## photos jobs download
 
-Save the result of every finished item of a job.
+Wait for jobs, then save the result of every item.
 
 ```
-photos jobs download [flags] <id>
+photos jobs download [flags] <id>...
 ```
 
 Each result is named after its input: shoe.jpg gives shoe.png for an image
@@ -1230,17 +1237,26 @@ give shoe.png and shoe-2.png. A file that exists is not replaced unless
 --force is given. Each line says what the matching command would: the faces
 hidden or restored, whether a subject was found, an id photo's findings.
 
+Each job is waited for first, as photos jobs wait does, and its results are
+saved as soon as it completes; several jobs go into one directory, named as
+one. With --no-wait, or once --wait-timeout (an hour) has passed, only the
+items finished by then are saved.
+
 Items that failed, or are not finished, are reported and make the exit code
 1; the others are still saved.
 
 | Flag | |
 |---|---|
 | `--force` | replace files that exist |
+| `--interval time` | the time between two looks at the job (default 2s) |
+| `--no-wait` | save the items finished now, without waiting for the rest |
 | `--out-dir directory` | the directory to save into, created if missing (default .) |
 | `--parallel files` | how many files to fetch at once (default 4) |
+| `--wait-timeout time` | the longest time to wait, for all the jobs named (default 1h0m0s) |
 
 ```sh
 photos jobs download job_5f0c2a --out-dir results
+photos jobs download job_5f0c2a job_7d1e9b --out-dir results --wait-timeout 3h
 photos jobs download job_5f0c2a --json | jq -r 'select(.error) | .input'
 ```
 

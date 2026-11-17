@@ -7,6 +7,29 @@ codes and the shape of `--json` output are part of what a version promises.
 
 ## Unreleased
 
+## 1.3.0 (2026-11-17)
+
+### Added
+
+- `photos jobs create` sends more than one job may hold as several jobs, one
+  after another, whole images in the order given: at most `--max-upload-mb`
+  (100 MB, the service's limit for a job upload) and 1000 images each. Each
+  id is printed on its own line as its job starts. One image over the limit
+  stops it before anything is sent.
+- `photos jobs wait` and `photos jobs download` take several job ids, waited
+  for one after another within one `--wait-timeout`; `download` saves the
+  results of all of them into one directory, named as one.
+
+### Changed
+
+- `photos jobs download` waits for each job to complete before saving
+  (`--interval`, `--wait-timeout`); `--no-wait` saves only what is finished,
+  as it did before.
+- `--wait-timeout` is an hour by default (it was 10 minutes, which a job of a
+  few hundred photos queued behind others outlasted).
+- Splitting at 100 MB needs the engine release that raised the job upload
+  limit; against an older one use `--max-upload-mb 24`.
+
 ## 1.2.0 (2026-11-16)
 
 ### Added

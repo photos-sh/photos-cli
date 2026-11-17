@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -167,9 +168,10 @@ func TestUsageErrors(t *testing.T) {
 		{"jobs create resize", "no inputs"},
 		{"jobs create resize --param width a.png", "name=value"},
 		{"jobs get", "one job id"},
-		{"jobs wait a b", "one job id"},
+		{"jobs wait", "job ids"},
 		{"jobs delete", "id"},
-		{"jobs download", "one job id"},
+		{"jobs download", "job ids"},
+		{"jobs create resize --max-upload-mb 0 a.png", "at least 1"},
 		{"presets one two", "one preset name at most"},
 		{"completion", "bash, zsh or fish"},
 		{"completion powershell", "bash, zsh or fish"},
@@ -702,6 +704,147 @@ func TestJobsDownload(t *testing.T) {
 	s.run("jobs", "download", "job_9", "--out-dir", "got", "--force")
 	if data, _ := os.ReadFile(filepath.FromSlash("got/shoe.png")); string(data) != "one" {
 		t.Errorf("--force did not replace: %q", data)
+	}
+}
+
+// create sends more than one job takes as several jobs, whole images in
+// order, by size and by count, and prints each id as it starts.
+func TestJobsCreateSplits(t *testing.T) {
+	s := newSession(t)
+	for _, name := range []string{"a.jpg", "b.jpg", "c.jpg"} {
+		s.write(name, bytes.Repeat([]byte{1}, 400_000))
+	}
+	var made atomic.Int32
+	s.api.handle("POST /v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 202, jobJSON(fmt.Sprintf("job_%d", made.Add(1)), "queued", `{"input":"x","status":"pending"}`))
+	})
+
+	// 1 MB a job: a and b together, c alone.
+	res := s.ok("jobs", "create", "run", "--param", "preset=web", "--max-upload-mb", "1", "a.jpg", "b.jpg", "c.jpg")
+	if res.stdout != "job_1\njob_2\n" {
+		t.Errorf("stdout = %q", res.stdout)
+	}
+	if !strings.Contains(res.stderr, "sent as 2 jobs") || !strings.Contains(res.stderr, "photos jobs wait job_1 job_2") {
+		t.Errorf("stderr = %q", res.stderr)
+	}
+	var sent [][]string
+	for _, req := range s.api.all() {
+		var names []string
+		for _, f := range req.Files["image"] {
+			names = append(names, f.Name)
+		}
+		sent = append(sent, names)
+		if req.Fields["operation"][0] != "run" {
+			t.Errorf("operation = %v", req.Fields["operation"])
+		}
+	}
+	if !reflect.DeepEqual(sent, [][]string{{"a.jpg", "b.jpg"}, {"c.jpg"}}) {
+		t.Errorf("jobs sent = %v", sent)
+	}
+
+	// Under the limit: one job, as before.
+	s.api.reset()
+	if res := s.ok("jobs", "create", "run", "a.jpg", "b.jpg", "c.jpg"); res.stdout != "job_3\n" || len(s.api.all()) != 1 {
+		t.Errorf("one job: %q, %d requests", res.stdout, len(s.api.all()))
+	}
+
+	// One image larger than a job may upload: nothing is sent.
+	s.api.reset()
+	s.write("big.jpg", bytes.Repeat([]byte{1}, 1_100_000))
+	res = s.run("jobs", "create", "run", "--max-upload-mb", "1", "a.jpg", "big.jpg")
+	if res.code == 0 || !strings.Contains(res.stderr, "big.jpg is 1.1 MB, more than one job may upload") || len(s.api.all()) != 0 {
+		t.Errorf("too big: exit %d, %q, %d requests", res.code, res.stderr, len(s.api.all()))
+	}
+
+	// 1001 URLs: 1000 in one job, the last in another.
+	s.api.reset()
+	args := []string{"jobs", "create", "resize", "--param", "width=10"}
+	for i := range 1001 {
+		args = append(args, fmt.Sprintf("https://example.com/%d.jpg", i))
+	}
+	s.ok(args...)
+	var counts []int
+	for _, req := range s.api.all() {
+		inputs, _ := req.JSON["inputs"].([]any)
+		counts = append(counts, len(inputs))
+	}
+	if !reflect.DeepEqual(counts, []int{1000, 1}) {
+		t.Errorf("URLs per job = %v", counts)
+	}
+
+	// A job that fails to start after another started: the first id is out.
+	s.api.reset()
+	made.Store(0)
+	s.api.handle("POST /v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+		if made.Add(1) > 1 {
+			apiError(w, 413, "payload_too_large", "request body is too large")
+			return
+		}
+		writeJSON(w, 202, jobJSON("job_1", "queued", `{"input":"x","status":"pending"}`))
+	})
+	res = s.run("jobs", "create", "run", "--max-upload-mb", "1", "a.jpg", "b.jpg", "c.jpg")
+	if res.code == 0 || res.stdout != "job_1\n" || !strings.Contains(res.stderr, "1 of 2 jobs started") {
+		t.Errorf("second job refused: exit %d, %q, %q", res.code, res.stdout, res.stderr)
+	}
+}
+
+// download waits for each job, then saves its results; several jobs share
+// one directory and its names.
+func TestJobsDownloadWaits(t *testing.T) {
+	s := newSession(t)
+	var polls atomic.Int32
+	s.api.handle("GET /v1/jobs/job_a", func(w http.ResponseWriter, r *http.Request) {
+		if polls.Add(1) < 3 {
+			writeJSON(w, 200, jobJSON("job_a", "running", `{"input":"a.jpg","status":"pending"}`))
+			return
+		}
+		writeJSON(w, 200, jobJSON("job_a", "completed", `{"input":"a.jpg","status":"done","content_type":"image/jpeg","bytes":1}`))
+	})
+	s.api.handle("GET /v1/jobs/job_b", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, jobJSON("job_b", "completed", `{"input":"other/a.jpg","status":"done","content_type":"image/jpeg","bytes":1}`))
+	})
+	for _, id := range []string{"job_a", "job_b"} {
+		s.api.handle("GET /v1/jobs/"+id+"/items/0", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "image/jpeg")
+			fmt.Fprint(w, id)
+		})
+	}
+	res := s.ok("jobs", "download", "job_a", "job_b", "--out-dir", "got", "--interval", "5ms")
+	if polls.Load() != 3 {
+		t.Errorf("%d looks at job_a, want 3", polls.Load())
+	}
+	for name, want := range map[string]string{"got/a.jpg": "job_a", "got/a-2.jpg": "job_b"} {
+		if data, err := os.ReadFile(filepath.FromSlash(name)); err != nil || string(data) != want {
+			t.Errorf("%s = %q, %v; stderr %s", name, data, err, res.stderr)
+		}
+	}
+
+	// --no-wait saves what is finished now, and says what is not.
+	s.api.handle("GET /v1/jobs/job_c", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, jobJSON("job_c", "running", `{"input":"c.jpg","status":"pending"}`))
+	})
+	res = s.run("jobs", "download", "job_c", "--out-dir", "got", "--no-wait")
+	if res.code != ExitFailed || !strings.Contains(res.stderr, "only the finished items are saved") || !strings.Contains(res.stderr, "not finished") {
+		t.Errorf("--no-wait: exit %d, %q", res.code, res.stderr)
+	}
+	// Past --wait-timeout: the same, after waiting.
+	res = s.run("jobs", "download", "job_c", "--out-dir", "got", "--interval", "5ms", "--wait-timeout", "20ms")
+	if res.code != ExitFailed || !strings.Contains(res.stderr, "only the finished items are saved") {
+		t.Errorf("past the timeout: exit %d, %q", res.code, res.stderr)
+	}
+	// An unknown job among others: reported, the others still saved.
+	res = s.run("jobs", "download", "job_none", "job_b", "--out-dir", "again")
+	if res.code != ExitFailed || !strings.Contains(res.stderr, "job_none") {
+		t.Errorf("unknown job: exit %d, %q", res.code, res.stderr)
+	}
+	if _, err := os.Stat(filepath.FromSlash("again/a.jpg")); err != nil {
+		t.Errorf("job_b not saved after job_none: %v", err)
+	}
+
+	// wait takes several ids too.
+	res = s.ok("jobs", "wait", "job_a", "job_b", "--interval", "5ms")
+	if !strings.Contains(res.stdout, "job_a") || !strings.Contains(res.stdout, "job_b") {
+		t.Errorf("wait for two:\n%s", res.stdout)
 	}
 }
 
