@@ -140,6 +140,11 @@ photos remove-background --width 2000 --height 2000 --fill 0.8 \
 # A studio shot: keep the gift box beside the bottle, leave out the shadow
 photos remove-background --studio perfume.jpg     # perfume-nobg.png
 
+# Another model, at the same price: lumen for a pale box on a light backdrop,
+# muse for people (atlas, the default, suits everyday product photos)
+photos remove-background --model lumen --studio perfume-boxed.jpg
+photos remove-background --model muse portrait.jpg
+
 # Light and colour, shape, room, a mark
 photos enhance shoe.jpg                           # shoe-enhanced.jpg
 photos crop --aspect 4:5 shoe.jpg                 # shoe-cropped.jpg

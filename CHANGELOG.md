@@ -7,6 +7,26 @@ codes and the shape of `--json` output are part of what a version promises.
 
 ## Unreleased
 
+## 1.4.0 (2026-11-20)
+
+### Added
+
+- `remove-background --model`, the model that finds the subject: `atlas`
+  (the default) for everyday product photos, a product alone or with its
+  box, on any backdrop; `lumen` for pale packaging on a light backdrop, such
+  as a cream or wooden box beside a bottle, and close-ups where the product
+  fills the photo (on those, `atlas` can keep the bottle and drop the box);
+  `muse` for people, in portraits and as models wearing the product. Each
+  costs the same, and each works with `--studio`. Without `--model` the
+  service's default applies. The name is not checked here, so a model the
+  service adds later can be named before this binary knows of it. A
+  `remove-background` job takes it as `--param model=lumen`. It needs
+  engine 0.1.14.
+
+### Changed
+
+- Built with photos-go 1.3.0 (for `RemoveBackgroundOptions.Model`).
+
 ## 1.3.0 (2026-11-17)
 
 ### Added

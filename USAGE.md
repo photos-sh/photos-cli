@@ -105,12 +105,24 @@ Alias: `bg-remove`.
 The cutout is a transparent PNG unless --format or --background say
 otherwise.
 
+--model picks the model that finds the subject. Each costs the same: try
+another when one drops part of what you sell.
+
+    atlas  the default: everyday product photos, a product alone or with
+           its box, on any backdrop
+    lumen  pale packaging on a light backdrop, such as a cream or wooden
+           box beside a bottle, and close-ups where the product fills the
+           photo; on those, atlas can keep the bottle and drop the box.
+           It may keep a dark backdrop at the photo's edge, and can cut
+           away part of an open frame or wire stand
+    muse   people: portraits, and models wearing the product
+
 --studio is for studio shots: a product on a plain, light backdrop, as in a
 light tent. It also keeps what clearly stands out from the backdrop and
 touches the product, such as the gift box, case or lid shown with a bottle,
 or a pale box the model left half transparent. Shadows and the floor below
 the product are left out. A photo without a plain light backdrop is cut out
-as without it.
+as without it. It works with every --model.
 
 The cutout can be staged in the same call: on a canvas (--width and
 --height, with --fill and --align), with a --shadow or a --reflection under
@@ -141,6 +153,7 @@ sent a few at once (--parallel); one failing does not stop the others.
 | `--format format` | output format: png, jpg, webp or avif (default: png) |
 | `--height pixels` | the canvas's height in pixels; needs --width |
 | `--mask` | write the greyscale alpha mask instead of the cutout |
+| `--model name` | the model that finds the subject, by name: atlas for everyday product photos, lumen for pale packaging on a light backdrop and close-ups, muse for people (default: atlas) |
 | `--out-dir directory` | write the results into this directory, created if missing, as \<name>.\<ext> |
 | `-o, --output file` | write the result to this file, or - for standard output (one input only) |
 | `--padding pixels` | margin around the subject when cropping, in pixels |
@@ -157,6 +170,8 @@ sent a few at once (--parallel); one failing does not stop the others.
 photos remove-background shoe.jpg
 photos remove-background --background white --crop --padding 40 --format jpg --out-dir cutouts photos/
 photos remove-background --studio perfume.jpg
+photos remove-background --model lumen --studio perfume-boxed.jpg
+photos remove-background --model muse portrait.jpg
 photos remove-background --width 2000 --height 2000 --fill 0.8 --shadow contact --background white --format jpg shoe.jpg
 ```
 

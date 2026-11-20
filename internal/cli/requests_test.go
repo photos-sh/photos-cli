@@ -58,6 +58,10 @@ func TestEachCommandMakesItsRequest(t *testing.T) {
 			"background=white&crop=true&format=jpg&padding=40&quality=90", []string{"image=a.png"}, nil},
 		{"remove-background --mask a.png", "POST", "/v1/remove-background", "mask=true", []string{"image=a.png"}, nil},
 		{"remove-background --studio a.png", "POST", "/v1/remove-background", "studio=true", []string{"image=a.png"}, nil},
+		{"remove-background --model lumen --studio a.png", "POST", "/v1/remove-background", "model=lumen&studio=true", []string{"image=a.png"}, nil},
+		{"remove-background --model muse a.png", "POST", "/v1/remove-background", "model=muse", []string{"image=a.png"}, nil},
+		// A model this binary does not know of is the service's to judge.
+		{"remove-background --model nova a.png", "POST", "/v1/remove-background", "model=nova", []string{"image=a.png"}, nil},
 		// Staging the cutout.
 		{"remove-background --width 80 --height 60 --fill 0.8 --align bottom --shadow contact --reflection --background white a.png", "POST", "/v1/remove-background",
 			"align=bottom&background=white&fill=0.8&height=60&reflection=true&shadow=contact&width=80", []string{"image=a.png"}, nil},
@@ -163,6 +167,8 @@ func TestEachCommandMakesItsRequest(t *testing.T) {
 		// twice is sent twice.
 		{"jobs create select --param point=4,3 --param point=5,2 --param crop=true a.png", "POST", "/v1/jobs", "",
 			[]string{"image=a.png"}, []string{"operation=select", "params=crop=true&point=4%2C3&point=5%2C2"}},
+		{"jobs create remove-background --param model=lumen --param studio=true a.png", "POST", "/v1/jobs", "",
+			[]string{"image=a.png"}, []string{"operation=remove-background", "params=model=lumen&studio=true"}},
 		{"jobs create id-photo --param document=us-passport a.png", "POST", "/v1/jobs", "",
 			[]string{"image=a.png"}, []string{"operation=id-photo", "params=document=us-passport"}},
 		{"jobs create blur-faces --param mode=fill --param min-score=0.4 a.png b.png", "POST", "/v1/jobs", "",
