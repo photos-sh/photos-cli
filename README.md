@@ -145,6 +145,10 @@ photos remove-background --studio perfume.jpg     # perfume-nobg.png
 photos remove-background --model lumen --studio perfume-boxed.jpg
 photos remove-background --model muse portrait.jpg
 
+# The edge: trim the light rim a dark bottle shows on a dark page, and make
+# the edge crisp
+photos remove-background --shift -1.5 --hardness 50 bottle.jpg
+
 # Light and colour, shape, room, a mark
 photos enhance shoe.jpg                           # shoe-enhanced.jpg
 photos crop --aspect 4:5 shoe.jpg                 # shoe-cropped.jpg

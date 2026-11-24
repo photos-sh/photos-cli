@@ -62,6 +62,13 @@ func TestEachCommandMakesItsRequest(t *testing.T) {
 		{"remove-background --model muse a.png", "POST", "/v1/remove-background", "model=muse", []string{"image=a.png"}, nil},
 		// A model this binary does not know of is the service's to judge.
 		{"remove-background --model nova a.png", "POST", "/v1/remove-background", "model=nova", []string{"image=a.png"}, nil},
+		// The edge. A shift inward is a negative number, taken as the flag's
+		// value; a feather of 0 and --decontaminate=false are sent.
+		{"remove-background --shift -1.5 --hardness 50 a.png", "POST", "/v1/remove-background", "hardness=50&shift=-1.5", []string{"image=a.png"}, nil},
+		{"remove-background --shift=-1.5 --smooth 2.5 a.png", "POST", "/v1/remove-background", "shift=-1.5&smooth=2.5", []string{"image=a.png"}, nil},
+		{"remove-background --feather 0 --decontaminate=false --solidify a.png", "POST", "/v1/remove-background",
+			"decontaminate=false&feather=0&solidify=true", []string{"image=a.png"}, nil},
+		{"remove-background --shift 0 --hardness 0 --smooth 0 a.png", "POST", "/v1/remove-background", "", []string{"image=a.png"}, nil},
 		// Staging the cutout.
 		{"remove-background --width 80 --height 60 --fill 0.8 --align bottom --shadow contact --reflection --background white a.png", "POST", "/v1/remove-background",
 			"align=bottom&background=white&fill=0.8&height=60&reflection=true&shadow=contact&width=80", []string{"image=a.png"}, nil},
@@ -169,6 +176,8 @@ func TestEachCommandMakesItsRequest(t *testing.T) {
 			[]string{"image=a.png"}, []string{"operation=select", "params=crop=true&point=4%2C3&point=5%2C2"}},
 		{"jobs create remove-background --param model=lumen --param studio=true a.png", "POST", "/v1/jobs", "",
 			[]string{"image=a.png"}, []string{"operation=remove-background", "params=model=lumen&studio=true"}},
+		{"jobs create remove-background --param shift=-1.5 --param hardness=50 a.png", "POST", "/v1/jobs", "",
+			[]string{"image=a.png"}, []string{"operation=remove-background", "params=hardness=50&shift=-1.5"}},
 		{"jobs create id-photo --param document=us-passport a.png", "POST", "/v1/jobs", "",
 			[]string{"image=a.png"}, []string{"operation=id-photo", "params=document=us-passport"}},
 		{"jobs create blur-faces --param mode=fill --param min-score=0.4 a.png b.png", "POST", "/v1/jobs", "",

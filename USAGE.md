@@ -124,6 +124,15 @@ or a pale box the model left half transparent. Shadows and the floor below
 the product are left out. A photo without a plain light backdrop is cut out
 as without it. It works with every --model.
 
+The cutout's edge can be tuned. --shift moves it, in pixels: inward when
+negative, which trims the light rim a dark product shows on a dark page,
+outward when positive. --hardness makes it crisper, down to about a pixel
+wide at 100; it sharpens a light rim too, so on a dark page give it with a
+small negative --shift. --smooth irons out ripples in the outline; from
+about 4 it rounds small corners and breaks up thin parts such as a wire
+stand. --feather is how soft the edge is to begin with: left out, it grows
+with the photo, and 0 is the model's hard edge.
+
 The cutout can be staged in the same call: on a canvas (--width and
 --height, with --fill and --align), with a --shadow or a --reflection under
 it, and with something behind it: a colour (--background), an image
@@ -148,9 +157,12 @@ sent a few at once (--parallel); one failing does not stop the others.
 | `--background-image file` | an image file to put behind the subject, scaled to cover the result |
 | `--blur amount` | keep the photo's own background behind the subject, blurred by this amount, 1 (slight) to 100 |
 | `--crop` | crop to the subject |
+| `--decontaminate` | clean the old background's colour out of the soft edge; --decontaminate=false keeps the photo's own colours there (default: true) |
+| `--feather pixels` | how soft the cutout's edge is: a blur of this many pixels, 0 to 10; 0 is the model's hard edge (default: grows with the photo, 1.4 at 2000 px) |
 | `--fill fraction` | how much of the canvas the subject may take in its tighter dimension, as a fraction from 0.05 to 1 (default: 0.85) |
 | `--force` | replace files that exist |
 | `--format format` | output format: png, jpg, webp or avif (default: png) |
+| `--hardness amount` | make the cutout's edge crisper by this amount, 0 to 100 (about a pixel wide at 100); on a dark page, pair it with a small negative --shift |
 | `--height pixels` | the canvas's height in pixels; needs --width |
 | `--mask` | write the greyscale alpha mask instead of the cutout |
 | `--model name` | the model that finds the subject, by name: atlas for everyday product photos, lumen for pale packaging on a light backdrop and close-ups, muse for people (default: atlas) |
@@ -162,6 +174,9 @@ sent a few at once (--parallel); one failing does not stop the others.
 | `--recursive` | search directories below the ones named, keeping the layout in --out-dir |
 | `--reflection` | add a fading mirror image under the subject; leave room below it (--fill under 1) |
 | `--shadow kind` | a shadow under the subject, by kind: contact (soft, at its base), drop (the silhouette, offset) or none (default: none) |
+| `--shift pixels` | move the cutout's edge by this many pixels, -10 to 10: inward when negative (trims a light rim), outward when positive |
+| `--smooth amount` | iron out ripples in the cutout's outline by this amount, 0 to 10; from about 4 it rounds small corners and breaks up thin parts |
+| `--solidify` | make semi-transparent areas inside the subject opaque, for an opaque product; wrong for glass, smoke or hair |
 | `--studio` | for a product on a plain, light backdrop: also keep what stands out from it and touches the product (a gift box, case or lid); shadows and the floor are left out |
 | `--suffix text` | the text added to each name instead of the command's own; may be empty |
 | `--width pixels` | place the subject on a canvas this wide, in pixels; needs --height |
@@ -172,6 +187,7 @@ photos remove-background --background white --crop --padding 40 --format jpg --o
 photos remove-background --studio perfume.jpg
 photos remove-background --model lumen --studio perfume-boxed.jpg
 photos remove-background --model muse portrait.jpg
+photos remove-background --shift -1.5 --hardness 50 bottle.jpg
 photos remove-background --width 2000 --height 2000 --fill 0.8 --shadow contact --background white --format jpg shoe.jpg
 ```
 

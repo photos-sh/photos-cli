@@ -7,6 +7,29 @@ codes and the shape of `--json` output are part of what a version promises.
 
 ## Unreleased
 
+## 1.5.0 (2026-11-24)
+
+### Added
+
+- `remove-background` tunes the cutout's edge: `--shift` moves it, in pixels
+  (negative inward, which trims the light rim a dark product shows on a dark
+  page; -10 to 10), `--hardness` makes it crisper (0 to 100, about a pixel
+  wide at 100), `--smooth` irons out ripples in the outline (0 to 10) and
+  `--feather` is how soft it is, in pixels (0 to 10; 0 is the model's hard
+  edge, and without the flag it grows with the photo).
+- `remove-background --decontaminate=false` keeps the photo's own colours in
+  the soft edge, which the service otherwise cleans of the old background,
+  and `--solidify` makes semi-transparent areas inside the subject opaque.
+- Without these flags the request is what it was. The values are not checked
+  here: the service refuses one out of range and says which. A
+  `remove-background` job takes them as `--param shift=-1.5`. They need
+  engine 0.1.16.
+
+### Changed
+
+- Built with photos-go 1.4.0 (for the edge options of
+  `RemoveBackgroundOptions`).
+
 ## 1.4.0 (2026-11-20)
 
 ### Added

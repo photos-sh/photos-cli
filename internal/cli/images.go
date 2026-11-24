@@ -225,6 +225,15 @@ or a pale box the model left half transparent. Shadows and the floor below
 the product are left out. A photo without a plain light backdrop is cut out
 as without it. It works with every --model.
 
+The cutout's edge can be tuned. --shift moves it, in pixels: inward when
+negative, which trims the light rim a dark product shows on a dark page,
+outward when positive. --hardness makes it crisper, down to about a pixel
+wide at 100; it sharpens a light rim too, so on a dark page give it with a
+small negative --shift. --smooth irons out ripples in the outline; from
+about 4 it rounds small corners and breaks up thin parts such as a wire
+stand. --feather is how soft the edge is to begin with: left out, it grows
+with the photo, and 0 is the model's hard edge.
+
 The cutout can be staged in the same call: on a canvas (--width and
 --height, with --fill and --align), with a --shadow or a --reflection under
 it, and with something behind it: a colour (--background), an image
@@ -241,6 +250,7 @@ without a canvas, and its line says "no subject found".
 			"photos remove-background --studio perfume.jpg",
 			"photos remove-background --model lumen --studio perfume-boxed.jpg",
 			"photos remove-background --model muse portrait.jpg",
+			"photos remove-background --shift -1.5 --hardness 50 bottle.jpg",
 			"photos remove-background --width 2000 --height 2000 --fill 0.8 --shadow contact --background white --format jpg shoe.jpg",
 		},
 		Flags: func(fs *flag.FlagSet) {
@@ -251,6 +261,12 @@ without a canvas, and its line says "no subject found".
 			fs.BoolVar(&o.Mask, "mask", false, "write the greyscale alpha mask instead of the cutout")
 			fs.StringVar(&o.Model, "model", "", "the model that finds the subject, by `name`: atlas for everyday product photos, lumen for pale packaging on a light backdrop and close-ups, muse for people (default: atlas)")
 			fs.BoolVar(&o.Studio, "studio", false, "for a product on a plain, light backdrop: also keep what stands out from it and touches the product (a gift box, case or lid); shadows and the floor are left out")
+			fs.Var(optionalFloat{&o.Feather}, "feather", "how soft the cutout's edge is: a blur of this many `pixels`, 0 to 10; 0 is the model's hard edge (default: grows with the photo, 1.4 at 2000 px)")
+			fs.Float64Var(&o.Smooth, "smooth", 0, "iron out ripples in the cutout's outline by this `amount`, 0 to 10; from about 4 it rounds small corners and breaks up thin parts")
+			fs.Float64Var(&o.Shift, "shift", 0, "move the cutout's edge by this many `pixels`, -10 to 10: inward when negative (trims a light rim), outward when positive")
+			fs.Float64Var(&o.Hardness, "hardness", 0, "make the cutout's edge crisper by this `amount`, 0 to 100 (about a pixel wide at 100); on a dark page, pair it with a small negative --shift")
+			fs.Var(optionalBool{&o.Decontaminate}, "decontaminate", "clean the old background's colour out of the soft edge; --decontaminate=false keeps the photo's own colours there (default: true)")
+			fs.BoolVar(&o.Solidify, "solidify", false, "make semi-transparent areas inside the subject opaque, for an opaque product; wrong for glass, smoke or hair")
 			fs.IntVar(&o.Width, "width", 0, "place the subject on a canvas this wide, in `pixels`; needs --height")
 			fs.IntVar(&o.Height, "height", 0, "the canvas's height in `pixels`; needs --width")
 			fs.Float64Var(&o.Fill, "fill", 0, "how much of the canvas the subject may take in its tighter dimension, as a `fraction` from 0.05 to 1 (default: 0.85)")
